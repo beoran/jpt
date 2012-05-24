@@ -3,8 +3,87 @@
 
 class Jpt
   
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  def mac_address?(text)
+    re = %r{\A[0-9A-Fa-f]{12}\Z}
+    return re.match(text)
+  end
+  
+  def do_command(line)
+    if match = mac_address?(line)
+      puts "Using MAC address: #{line} #{match}"
+    else
+      puts "Not a MAC address!"
+    end
+    case line
+      when "quit"
+        @busy = false
+      else
+        puts "Unknown command!"
+    end
+  end
+  
+  
+  def read_line
+    # Use readline if we have it
+    line = ""
+    if (self.class.const_get(:Readline) rescue nil)
+      line = Readline.readline rescue ""
+    else
+      line = readline rescue ""      
+    end
+    return "" if(!line)
+    return line.chomp!
+  end
+  
+  def ask_password
+    @asking = true
+    while @asking
+      puts "JPT Password?"
+      # use stty to hide password 
+      system "stty -echo"
+      line = read_line || ""
+      system "stty echo"
+      if line.reverse == "l00t" + "n0s4j"
+        @asking = false
+        puts("OK!")
+        puts
+      elsif line == "quit"
+        @asking = false
+        @busy   = false
+      else
+        puts("NO!")
+        puts
+      end
+    end  
+  end  
+  
+  
   def main
-    puts "hello"
+    trap("SIGINT") { @intr = true ; throw :ctrl_c }
+    @intr = false
+    catch :ctrl_c do
+      if @intr
+        puts "Interrupted."
+      end
+    end
+    @busy = true
+    ask_password # may change @busy 
+    while @busy
+      puts "JPT Command?"
+      line = read_line
+      do_command(line)
+      puts "-" * 16
+    end
   end
 
   def self.main
