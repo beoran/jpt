@@ -1,0 +1,32 @@
+#!/usr/local/bin/ruby
+
+
+class Jpt
+  
+  def main
+    puts "hello"
+  end
+
+  def self.main
+    aid = self.new
+    aid.main
+  end
+end
+
+
+
+Jpt.main
+
+
+
+
+
+
+
+
+
+
+
+
+
+
