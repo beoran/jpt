@@ -1,10 +1,84 @@
 #!/usr/local/bin/ruby
 
+require 'pty'
+require 'expect'
+
+
+JPT_DIR       = '/home/bjorn/src/jpt/'
+VOLTAGE_MIN   = 3.2
+VOLTAGE_MAX   = 3.5
+
+
+$: << (JPT_DIR + 'lib')
+
+require 'termios'
+require 'serial'
+
+
+BRJTAG = JPT_DIR + 'bin/brjtag.a'
+
+
+
+
+
 
 class Jpt
   
+  # probe command: 
+  PROBE_COMMAND = "-probeonly /bypass /cable:2 /waitbrk /srst"
+  BRJTAG_REPLY  = "Broadcom EJTAG Debrick Utility v2.0.5-hugebird"
+  BRJTAG_VOLTS  = %r{Detected target Vref = ([0-9]+\.[0-9]+)V}
+  BRJTAG_ENTER  = 
+  "Press any <Enter> key to continue... ONCE target board is powered on!"
+  BRJTAG_COMPLETE = '*** REQUESTED OPERATION IS COMPLETE ***'
   
-  
+  def probe_brjtag
+    pid_saved = -1
+    command = BRJTAG + " " + PROBE_COMMAND
+    return nil, "Please run this program as uid root" if Process.uid != 0
+    return nil, "Please run this program as euid root" if Process.euid != 0
+    PTY.spawn(command) do |jtag_out, jtag_in, jtag_pid|
+      return nil, "Could not spawn brjtag." unless jtag_out
+      return nil, "Could not spawn brjtag." unless jtag_in
+      return nil, "Could not spawn brjtag." unless jtag_pid
+      pid_saved = jtag_pid
+      aid = jtag_out.expect(BRJTAG_REPLY)
+      # check version reply
+      unless aid
+        return nil, "Wrong version of brjtag.a, expecting v2.0.5-hugebird" 
+      end
+      # read voltage reply
+      aid = jtag_out.expect(BRJTAG_VOLTS)
+      unless aid
+        return nil, "Could not read voltage, or negative voltage."
+      end
+      # check voltage      
+      voltage = aid.last.to_f
+      if voltage < VOLTAGE_MIN
+        return nil, "Voltage too low."
+      end
+      if voltage > VOLTAGE_MAX
+        return nil, "Voltage too high."
+      end
+      aid = jtag_out.expect(BRJTAG_ENTER)
+      unless aid
+        return nil, "Could not read waiting for enter reply."
+      end
+      jtag_in.write("\r\n")
+      
+      aid = jtag_out.expect(BRJTAG_COMPLETE, 9999999)
+      unless aid
+        return nil, "Operation may have failed?"
+      end
+      Process.kill('INT', pid_saved) if pid_saved > 0
+      return voltage, "Probe OK!"
+    end
+    return true
+    rescue 
+      return nil, $!.to_s
+    ensure 
+      Process.kill('INT', pid_saved) if pid_saved > 0
+  end
   
   
   
@@ -69,6 +143,14 @@ class Jpt
   
   
   def main
+    puts "Probing board..."
+    ok, mesg = probe_brjtag
+    if ok 
+      puts mesg
+    else   
+      puts "Error probing board: #{mesg}"
+    end
+    return 0
     trap("SIGINT") { @intr = true ; throw :ctrl_c }
     @intr = false
     catch :ctrl_c do
