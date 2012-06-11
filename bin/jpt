@@ -127,6 +127,9 @@ class Jpt
   end
   
   
+  # First reply that the CFE should give over serial 
+  SERIAL_CFE_REPLY = "CFE version ([0-9\.\-]+)"
+  
   # Does the required work over the serial port after flashing 
   # (now just tests)
   def serial_work
@@ -134,7 +137,7 @@ class Jpt
                   :baud         => SERIAL_BAUD,
                   :read_timeout => SERIAL_READ_TIMEOUT) do |serial|
       loop do         
-        aid = serial.expect(/.*\r\n/)
+        aid = serial.expect(SERIAL_CFE_REPLY, 10)
         if aid 
           puts "serial expect a line:"
           p aid
