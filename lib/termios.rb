@@ -216,7 +216,7 @@ module Termios
     end  
   
       
-    class Termios
+    class RTermios
       
       attr_accessor :file 
       # The file that this termios settings are read from and set to by default.  
@@ -353,7 +353,7 @@ module Termios
       
     
     def self.new_termios(file = nil)
-      return Termios::Termios.new(file)
+      return Termios::RTermios.new(file)
     end  
       
       

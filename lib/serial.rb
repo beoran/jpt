@@ -77,7 +77,7 @@ class Serial
     # This is needed to ignore handshake errors (I think).
     # By setting CLOCAL, the device ignores modem control lines. 
     # Communication may get out of whack without this. 
-    if hwflow # use hard ware flow control if needed
+    if hwflow # use hardware flow control if needed
       cflag        |= Termios::CRTSCTS
     end
 
@@ -118,6 +118,13 @@ class Serial
   def write(to_write)
     return @file.syswrite(to_write)    
   end
+  
+  # Applies expect on the data read from the serial port
+  def expect(pattern, timeout= 1.0)
+    timeout ||= @read_timeout
+    return @file.expect(pattern, timeout)
+  end
+  
   
   # Reads one time from the device with the given maximum buffer length
   def read(read_size = nil)
@@ -170,15 +177,21 @@ class Serial
   # Opens a new serial RS232 connection
   def self.serial(params = {})
     filename = params[:filename]
-    baud     = params[:baud] || 9600
-    bits     = params[:bits] || 8
-    stop     = params[:stop] || 1
-    serial = Serial.new(filename, baud, bits, stop)
+    baud     = params[:baud]    || 9600
+    bits     = params[:bits]    || 8
+    stop     = params[:stop]    || 1
+    hwflow   = params[:hwflow]  || false
+    serial = Serial.new(filename, baud, bits, stop, hwflow)
     serial.read_timeout  = params[:read_timeout] rescue nil 
     # initialize and set control, ignoring certain 
     # platform-specific exceptions.
     serial.rw_sleep      = params[:rw_sleep]
-    return serial 
+    if block_given?
+      yield serial
+      serial.close
+    else
+      return serial 
+    end
   end
 
 end # class Serial

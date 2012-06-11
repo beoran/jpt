@@ -1,13 +1,33 @@
 #!/usr/local/bin/ruby
+#
+# Jtag programming tool. A wrapper script to flash and confgure 
+# broadcom routers. Written by beoran@gmail.com 2012. 
+# This program is so specific that you probably can't use it
+# unless your name is ps2chiper, but as far as I'm concerned, it's 
+# free for anyone to use under the zlib license.
+#
+
+
+# Modify these as needed!
+
+# Directory where the program jpt is instaled.
+JPT_DIR               = '/home/bjorn/src/jpt/'
+
+# Minimum and maximum voltage measured over jtag 
+# for the board to be programmable. 
+VOLTAGE_MIN           = 3.2
+VOLTAGE_MAX           = 3.5
+
+# Serial settings
+SERIAL_FILE           = '/dev/ttyUSB0'
+SERIAL_BAUD           = 115200
+SERIAL_READ_TIMEOUT   = 5
+
+### Should be no need to modify anything under this line.
+#########################################################
 
 require 'pty'
 require 'expect'
-
-
-JPT_DIR       = '/home/bjorn/src/jpt/'
-VOLTAGE_MIN   = 3.2
-VOLTAGE_MAX   = 3.5
-
 
 $: << (JPT_DIR + 'lib')
 
@@ -18,9 +38,7 @@ require 'serial'
 BRJTAG    = JPT_DIR + 'bin/brjtag.a'
 DATA_DIR  = JPT_DIR + 'data'
 
-
-
-
+# serial: 3 cant-p
 
 
 class Jpt
@@ -109,6 +127,32 @@ class Jpt
   end
   
   
+  # Does the required work over the serial port after flashing 
+  # (now just tests)
+  def serial_work
+    Serial.serial(:filename     => SERIAL_FILE, 
+                  :baud         => SERIAL_BAUD,
+                  :read_timeout => SERIAL_READ_TIMEOUT) do |serial|
+      loop do         
+        aid = serial.expect(/.*\r\n/)
+        if aid 
+          puts "serial expect a line:"
+          p aid
+        else
+          printf(".")
+        end
+#         if serial.read_ok?
+#           buf = serial.read_all
+#           puts buf
+#         end
+      end
+   end
+  end
+  
+  
+  
+  
+  
   
   
   
@@ -174,7 +218,6 @@ class Jpt
     # it's current directory
     Dir.chdir(DATA_DIR)
     
-    
     puts "Probing board..."
     ok, mesg = probe_brjtag
     if ok 
@@ -189,6 +232,8 @@ class Jpt
     else
       puts "Error probing board: #{mesg}"
     end
+    serial_work
+    
     return 0
     trap("SIGINT") { @intr = true ; throw :ctrl_c }
     @intr = false
