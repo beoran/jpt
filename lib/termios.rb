@@ -155,7 +155,7 @@ module Termios
         # Multi-architecture aware distribitions.
         if (['a'].pack('P').length  > 4) # 64 bits mode
           LIBC_SO = '/lib/x86_64-linux-gnu/libc.so.6'
-          LIBC_SO = '/lib/x86_64-linux-gnu/libm.so.6'
+          LIBM_SO = '/lib/x86_64-linux-gnu/libm.so.6'
         elsif File.exist?('/lib/i386-linux-gnu/libc.so.6')
           LIBC_SO = '/lib/i386-linux-gnu/libc.so.6'
           LIBM_SO = '/lib/i386-linux-gnu/libm.so.6'
