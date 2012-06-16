@@ -23,6 +23,9 @@ SERIAL_FILE           = '/dev/ttyUSB0'
 SERIAL_BAUD           = 115200
 SERIAL_READ_TIMEOUT   = 5
 
+# Set to true to test serial work in stead of CFE flashing
+TRY_SERIAL_WORK       = false
+
 ### Should be no need to modify anything under this line.
 #########################################################
 
@@ -247,15 +250,17 @@ class Jpt
     # change to the data dir because brjtag needs to have CFE.BIN, etc in 
     # it's current directory
     Dir.chdir(DATA_DIR)
-    ok, message = serial_work
-    until ok 
-      puts message 
-      puts "Please power cycle the board."
-      sleep 1
+    if TRY_SERIAL_WORK
       ok, message = serial_work
-    end
+      until ok 
+        puts message 
+        puts "Please power cycle the board."
+        sleep 1
+        ok, message = serial_work
+      end
 
-    return 0
+      return 0
+    end
     
     puts "Probing board..."
     ok, mesg = probe_brjtag
@@ -271,6 +276,9 @@ class Jpt
     else
       puts "Error probing board: #{mesg}"
     end
+    
+    return 0
+    
     serial_work
     
     return 0
