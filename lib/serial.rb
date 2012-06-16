@@ -102,16 +102,22 @@ class Serial
     @read_timeout   = 1.0
     @read_size      = DEFAULT_READ_SIZE
     if(block_given?) 
-      yield self
-      self.close
+      begin 
+        yield self
+      ensure
+        self.close
+      end
     end 
   end
   
   # Closes the serial device
   def close
+    warn "Serial comm closed."
     @file.flush # flush output
-    @file.flock(File::LOCK_UN) # Remove file lock
+    res = @file.flock(File::LOCK_UN) # Remove file lock
+    p res 
     @file.close
+    @file = nil
   end
   
   # Writes to the serial device
@@ -187,8 +193,11 @@ class Serial
     # platform-specific exceptions.
     serial.rw_sleep      = params[:rw_sleep]
     if block_given?
-      yield serial
-      serial.close
+      begin
+        yield serial
+      ensure
+        serial.close
+      end
     else
       return serial 
     end

@@ -128,26 +128,53 @@ class Jpt
   
   
   # First reply that the CFE should give over serial 
-  SERIAL_CFE_REPLY = "CFE version ([0-9\.\-]+)"
+  SERIAL_CFE_REPLY = %r{CFE version ([0-9]+\.[0-9]+\.[0-9]+\-[0-9]+\.[0-9]+)}
+  # CFE asking for Board ID NAme
+  SERIAL_CFE_BIDNA = "Board Id Name (0-3)  \r\n"
+  # CANTP option (the one we need) 
+  SERIAL_CFE_CANTP = "r\nCANT-P           -------  3       :  "
+  
   
   # Does the required work over the serial port after flashing 
   # (now just tests)
-  def serial_work
+  def serial_work(mac_address = '0123456abcdef')
     Serial.serial(:filename     => SERIAL_FILE, 
                   :baud         => SERIAL_BAUD,
                   :read_timeout => SERIAL_READ_TIMEOUT) do |serial|
-      loop do         
-        aid = serial.expect(SERIAL_CFE_REPLY, 10)
-        if aid 
-          puts "serial expect a line:"
-          p aid
-        else
-          printf(".")
+      
+      # Wait for CFE first reply
+      aid = serial.expect(SERIAL_CFE_REPLY, 1)
+      unless aid
+        return false, "Could not connect or CFE not detected."
+      end
+      # be sure that we get the board ID NAme prompt
+      aid = serial.expect(SERIAL_CFE_BIDNA, 2)
+      unless aid
+        return false, "Did not get Boad ID Name prompt."
+      end
+      # wait unil the CANT-P option and prompt appears
+      aid = serial.expect(SERIAL_CFE_BIDNA, 2)
+      unless aid
+        loop do
+          aid = serial.expect(/./, 0.1)
+          break unless aid
+          printf "%s", aid.join('')
         end
-#         if serial.read_ok?
-#           buf = serial.read_all
-#           puts buf
-#         end
+        return false, "Did not get CANT-P option."
+      end
+      # Write the reply
+      serial.write("3\n")
+      num = 64
+      aid = serial.expect(/.{64,1024}/, 1)
+      until aid || (num < 1)
+        aid = serial.expect(/.{#{num},1024}/, 0.1) unless aid
+        num = num / 2
+      end
+      if aid 
+         puts "Serial comm:"
+         p aid
+      else
+          printf("No serial reply")
       end
    end
   end
@@ -220,6 +247,15 @@ class Jpt
     # change to the data dir because brjtag needs to have CFE.BIN, etc in 
     # it's current directory
     Dir.chdir(DATA_DIR)
+    ok, message = serial_work
+    until ok 
+      puts message 
+      puts "Please power cycle the board."
+      sleep 1
+      ok, message = serial_work
+    end
+
+    return 0
     
     puts "Probing board..."
     ok, mesg = probe_brjtag
