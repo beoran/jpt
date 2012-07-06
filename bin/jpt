@@ -24,10 +24,21 @@ SERIAL_BAUD           = 115200
 SERIAL_READ_TIMEOUT   = 5
 
 # Set to true to test serial work in stead of CFE flashing
-TRY_SERIAL_WORK       = false
+TRY_SERIAL_WORK       = true
+# Skip first part of serial work
+NO_SERIAL_PART_1      = true
 
 ### Should be no need to modify anything under this line.
 #########################################################
+
+
+#
+#
+# TODO Features:
+# 1) Progress report on calling brjtag and serial communication, etc...
+#
+#
+
 
 require 'pty'
 require 'expect'
@@ -55,6 +66,35 @@ class Jpt
   "Press any <Enter> key to continue... ONCE target board is powered on!"
   BRJTAG_COMPLETE = '*** REQUESTED OPERATION IS COMPLETE ***'
   
+  SPINNER_AID   = [ '/', '-', '\\', '|'];
+    
+  def initialize
+    @spinner = 0
+  end
+  
+  # Draws a spinner depending on the phase of i, or uses @spinner.
+  def draw_spinner(i=nil)
+    if i
+      index     = i % 4
+    else
+      index     = @spinner % 4
+      @spinner += 1
+    end
+    char    = SPINNER_AID[index]
+    printf("%c\b", char);
+    $stdout.flush
+  end
+    
+  # polls expect polls on the io polls times, calling the given block
+  # before each poll. returns nil if polling failed, or true on success.
+  def expect_poll(io, to_expect, polls, time= 1.0)
+    polls.times do |i|
+      yield i if block_given?
+      aid = io.expect(to_expect, time)
+      return aid if aid
+    end
+    return nil
+  end
   
   # checks the brtag's replies and responds to them
   def check_jtag(jtag_out, jtag_in, jtag_pid)    
@@ -85,7 +125,9 @@ class Jpt
       return nil, "Could not read waiting for enter reply."
     end
     jtag_in.write("\r\n")
-    aid = jtag_out.expect(BRJTAG_COMPLETE, 9999999)
+    aid = expect_poll(jtag_out, BRJTAG_COMPLETE, 1000, 1.0) do |i|
+      draw_spinner(i)
+    end
     p aid
     unless aid
       return nil, "Operation may have failed?"
@@ -130,13 +172,55 @@ class Jpt
   end
   
   
+  # flushes the expect buffer and collects what's inside
+  def expect_flush(io, time = 0.1)
+    buf = ''
+    loop do
+      aid = io.expect(/./, 0.1)
+      break unless aid
+      buf << aid.join('')
+    end
+    return buf
+  end
+  
   # First reply that the CFE should give over serial 
   SERIAL_CFE_REPLY = %r{CFE version ([0-9]+\.[0-9]+\.[0-9]+\-[0-9]+\.[0-9]+)}
   # CFE asking for Board ID NAme
   SERIAL_CFE_BIDNA = "Board Id Name (0-3)  \r\n"
   # CANTP option (the one we need) 
-  SERIAL_CFE_CANTP = "r\nCANT-P           -------  3       :  "
+  SERIAL_CFE_CANTP = "CANT-P           -------  3       :  "
+  SERIAL_CFE_NUMAC = "Number of MAC Addresses (1-32)    :  0  "
+  SERIAL_CFE_BAMAC = "Base MAC Address                  :  "
   
+  
+  
+  # expects a specific reply and handles it a bit 
+  def handle_expect(io, expected, message, polls = 10, time = 0.1)
+    printf("\n%s... ", message)
+    aid = expect_poll(io, expected, polls, time) do
+        draw_spinner()
+    end
+    unless aid
+      buf = expect_flush(io)
+      printf "Failed! Buffer contents:\n>>>%s<<<\nversus>>>%s<<<\n", buf, expected
+      return false, message + " failed!"
+    end
+    printf "\b OK! >>>%s<<<\nversus>>>%s<<<\n", aid, expected
+    return aid, nil
+  end
+  
+  
+  # Does part 1 of the serial work.
+  def serial_work_1(serial, mac_address)
+  end
+  
+  # Does part 2 of the serial work.
+  def serial_work_2(serial)
+  end
+  
+  
+  
+  # Does part 1 of the serial work
   
   # Does the required work over the serial port after flashing 
   # (now just tests)
@@ -146,50 +230,84 @@ class Jpt
                   :read_timeout => SERIAL_READ_TIMEOUT) do |serial|
       
       # Wait for CFE first reply
-      aid = serial.expect(SERIAL_CFE_REPLY, 1)
-      unless aid
-        return false, "Could not connect or CFE not detected."
-      end
-      # be sure that we get the board ID NAme prompt
-      aid = serial.expect(SERIAL_CFE_BIDNA, 2)
-      unless aid
-        return false, "Did not get Boad ID Name prompt."
-      end
+#       aid, err = handle_expect(serial, SERIAL_CFE_REPLY, 
+#                                "CFE Serial reply...", 4, 2)
+#       return aid, err unless aid
+      unless NO_SERIAL_PART_1
+        aid, err = handle_expect(serial, SERIAL_CFE_CANTP, 
+                                "CFE Board CANTP Prompt...", 4, 2)
+        return aid, err unless aid
+      
+      
+#       printf("\nBoard ID name Prompt...")
+#       be sure that we get the board ID NAme prompt
+#       aid = serial.expect(SERIAL_CFE_BIDNA, 2)
+#       unless aid
+#         return false, "Did not get Boad ID Name prompt."
+#       end
       # wait unil the CANT-P option and prompt appears
-      aid = serial.expect(SERIAL_CFE_BIDNA, 2)
-      unless aid
-        loop do
-          aid = serial.expect(/./, 0.1)
-          break unless aid
-          printf "%s", aid.join('')
-        end
-        return false, "Did not get CANT-P option."
-      end
-      # Write the reply
-      serial.write("3\n")
-      num = 64
-      aid = serial.expect(/.{64,1024}/, 1)
-      until aid || (num < 1)
-        aid = serial.expect(/.{#{num},1024}/, 0.1) unless aid
-        num = num / 2
-      end
-      if aid 
-         puts "Serial comm:"
-         p aid
-      else
-          printf("No serial reply")
-      end
+#       printf(" OK!\nChecking serial reply...")
+#       aid = expect_poll(serial, SERIAL_CFE_CANTP, 100, 0.1) do |i|
+#         draw_spinner(i)
+#       end
+#       unless aid
+#         buf = expect_flush(serial)
+#         printf ">>>%s<<<\n", buf
+#         return false, "Did not get CANT-P option."
+#       end
+      printf("Sending 3...\n")
+      # Write the reply, 3
+      serial.write("3\r\n")
+      sleep(1)
+#       # Now look for the next questoion
+#       aid, err = handle_expect(serial, SERIAL_CFE_NUMAC,
+#                                "CFE Board Number of Mac Addresses Prompt...", 4, 2)
+#       return aid, err unless aid
+      printf("Sending 1...\n")
+      # one 
+      serial.write("1\r\n")
+      sleep(1)
+      printf("Sending #{mac_address}...\n")
+#       aid, err = handle_expect(serial, SERIAL_CFE_BAMAC, 
+#                                "CFE Board Mac Address...", 4, 2)
+#       return aid, err unless aid
+      serial.write("#{mac_address}\r\n")
+      
+      
+#        printf(" Collecting replies...\n")
+#        aid = expect_poll(serial, "shoudln't happen at all", 10, 0.1) do |i|
+#          draw_spinner(i)
+#        end
+       sleep(1)
+       printf("Sending enter...\n")
+       serial.write("\r\n")
+       end
+       
+       aid, err = handle_expect(serial, %r{CFE\>},
+                               "CFE Board CFE Prompt...", 400, 0.1)
+       return aid, err unless aid
+       buf = expect_flush(serial)
+       printf("CFE prompt OK\n.")
+       return aid
+      
+#        buf = expect_flush(serial)
+#        printf "Replies: >>>%s<<<\n", buf
+       
+#       
+#         
+#       aid = serial.expect(/.{64,1024}/, 1)
+#       until aid || (num < 1)
+#         aid = serial.expect(/.{#{num},1024}/, 0.1) unless aid
+#         num = num / 2
+#       end
+#       if aid 
+#          puts "Serial comm:"
+#          p aid
+#       else
+#           printf("No serial reply")
+#       end
    end
   end
-  
-  
-  
-  
-  
-  
-  
-  
-  
   
   def mac_address?(text)
     re = %r{\A[0-9A-Fa-f]{12}\Z}
@@ -250,12 +368,13 @@ class Jpt
     # change to the data dir because brjtag needs to have CFE.BIN, etc in 
     # it's current directory
     Dir.chdir(DATA_DIR)
+    # get rid of putty if it's still running it interferes with teh serial work
+    system("killall putty")
     if TRY_SERIAL_WORK
       ok, message = serial_work
-      until ok 
-        puts message 
-        puts "Please power cycle the board."
-        sleep 1
+      until ok         
+        printf "\033[K%s", message
+        printf "\nPlease power cycle the board.\n"
         ok, message = serial_work
       end
 

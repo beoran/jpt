@@ -112,10 +112,8 @@ class Serial
   
   # Closes the serial device
   def close
-    warn "Serial comm closed."
     @file.flush # flush output
     res = @file.flock(File::LOCK_UN) # Remove file lock
-    p res 
     @file.close
     @file = nil
   end
