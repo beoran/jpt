@@ -47,6 +47,8 @@ $: << (JPT_DIR + 'lib')
 
 require 'termios'
 require 'serial'
+require 'view'
+
 
 
 BRJTAG    = JPT_DIR + 'bin/brjtag.a'
@@ -128,7 +130,6 @@ class Jpt
     aid = expect_poll(jtag_out, BRJTAG_COMPLETE, 1000, 1.0) do |i|
       draw_spinner(i)
     end
-    p aid
     unless aid
       return nil, "Operation may have failed?"
     end
@@ -364,12 +365,50 @@ class Jpt
   end  
   
   
+  def test_view
+    View.init
+    p View.screen_w
+    p View.screen_h
+    @ui               = View.new
+    @ui.heading       = " JPT JTAG Programming Tool "
+    @ui_stat          = @ui.view_of(View::Status, 1, 15, @ui.w - 2, 3) do |v|
+      v.heading       = " Status "
+    end
+    @ui_in            = @ui.view_of(View::Input, 1, 20, @ui.w - 2, 3) do |v|
+      v.heading       = " Input "
+    end
+    @ui_stat.error("The foo is frobbed!")
+    @ui.draw
+    @ui.update
+    reply = @ui_in.getstr
+    @ui_stat.ok(reply)
+    @ui.draw
+    @ui.update
+    reply = @ui_in.getstr
+    @ui_stat.ok(reply)
+  end
+  
   def main
     # change to the data dir because brjtag needs to have CFE.BIN, etc in 
     # it's current directory
     Dir.chdir(DATA_DIR)
-    # get rid of putty if it's still running it interferes with teh serial work
+    # get rid of putty if it's still running it interferes with the serial work
     system("killall putty")
+    test_view
+    return 0
+    
+    
+    printf "Probing jtag... "
+    voltage, error = probe_brjtag
+    if voltage     
+      printf "OK! Voltage: %f\n", voltage
+    else
+      warn error
+    end
+    return 0
+    
+    
+    
     if TRY_SERIAL_WORK
       ok, message = serial_work
       until ok         
