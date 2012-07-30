@@ -37,6 +37,7 @@ class View
   # green    #008000    red      #FF0000
 
   DIM_COLORS = { 
+    :default  => -1                   ,
     :black    => Curses::COLOR_BLACK  ,
     :navy     => Curses::COLOR_BLUE   ,
     :teal     => Curses::COLOR_CYAN   ,
@@ -84,14 +85,19 @@ class View
         # Dim color
         @colors_by_name[bg_name][fg_name] = Curses.color_pair(@color_count)
         # Bright color
-        @colors_by_name[bg_name][BRIGHT_FOR_DIM[fg_name]] = 
-          Curses.color_pair(@color_count) | Curses::A_BOLD
+        bright =BRIGHT_FOR_DIM[fg_name]
+        if bright
+          @colors_by_name[bg_name][bright] = 
+            Curses.color_pair(@color_count) | Curses::A_BOLD
+        end
         # Increase color count.
         @color_count += 1
       end
     end
     # set up default background color.
     @colors_by_name[:default] = @colors_by_name[:black]
+    # hide the cursor by defaut
+    Curses.curs_set(0)
   end
   
   # Should be called before using View. Initializes Curses. Auto-installs
@@ -104,8 +110,12 @@ class View
     self.init_colors
     # enable arrow keys
     Curses.stdscr.keypad(true)
-    @init = true
+    @init       = true
   end
+  
+  # Accessors for background and foreground colors
+  attr_accessor :background
+  attr_accessor :foreground
   
   # Deinitializes View and Curses.
   def self.done
@@ -113,6 +123,12 @@ class View
     @init = false
   end
   
+  # Switches to the given colors. Takes a block, so it can switch out again
+  def color_on(fore, back = :default, &block) 
+    attr = View.color_by_name(fore, back) 
+    @window.attron(attr, &block)
+  end
+    
   
   # Constructor for view.
   def initialize(x = 0, y = 0, w = nil, h = nil, parent = nil)
@@ -125,7 +141,12 @@ class View
     else
       @window = Curses.stdscr
     end
+    # default no heading
     @heading = nil
+    # default colors
+    @background = :default
+    @foreground = :default
+
     # Allow easier initialization though a block.
     if block_given?
       yield self
@@ -198,21 +219,25 @@ class View
     
   # Draws a box around the view.
   def draw_box
-    strat 0, 0, "┌" + ("─" * (self.w - 2)) + "┐"
-    reps = self.h - 2
-    reps.times do | i |
-      strat(0, i + 1, "│")
-      strat(self.w - 1, i + 1, "│")
+    color_on(self.foreground, self.background) do
+      strat 0, 0, "┌" + ("─" * (self.w - 2)) + "┐"
+      reps = self.h - 2
+      reps.times do | i |
+        strat(0, i + 1, "│")
+        strat(self.w - 1, i + 1, "│")
+      end
+      strat 0, self.h - 1, "└" + ("─" * (self.w - 2)) + "┘"
     end
-    strat 0, self.h - 1, "└" + ("─" * (self.w - 2)) + "┘"
   end
   
   # Draws the heading, if any, centered.
-  def draw_heading
+  def draw_heading    
     return unless @heading
-    xpos = (self.w - @heading.size) / 2
-    xpos = 0 if xpos < 0
-    strat(xpos, 0, @heading)
+    color_on(self.foreground, self.background) do
+      xpos = (self.w - @heading.size) / 2
+      xpos = 0 if xpos < 0
+      strat(xpos, 0, @heading)
+    end
   end
   
   # Draws the children.
@@ -227,9 +252,15 @@ class View
   def draw_self
   end
   
+  # Clears the view itself
+  def clear_self
+    @window.clear 
+  end
+  
   # Draws the whole view and it's children
   # Normally you don't need to override this.
   def draw
+    clear_self # clear the window to make redrawing simpler
     draw_box
     draw_heading
     draw_self
@@ -239,7 +270,6 @@ class View
   # Updates the view's children
   def update_children
     for child in @kids do
-      Curses.flash
       child.update
     end
   end
@@ -268,31 +298,27 @@ class View
     def error(message)
       @status = :error
       @text   = message
+      self.foreground = :red
     end
     
     # Sets the view back to OK and shows the message.
     def ok(message= "OK")
       @status = :ok
       @text   = message
+      self.foreground = :lime
     end
-    
     
     # overrides View draw_self
     def draw_self
-      attr = View.color_by_name(:green) 
-      attr = View.color_by_name(:red) if @status != :ok
-      @window.attron(attr) do
+      color = (@status == :ok) ? :lime : :red
+      color_on(color) do
         at(1,1)
-        @window.clrtoeol()
         addstr(@text)
       end
     end
-    
-    
   end
   
-  
-    # A one-line input field.
+  # A one-line input field.
   class Input < View
     def initialize(x = 0, y = 0, w = nil, h = nil, parent = nil)
       # call super constructor 
@@ -309,29 +335,69 @@ class View
     
     # Reads a line of input, blocking.
     def getstr
-      @input = @window.getstr
+      color_on(:yellow) do
+        Curses.curs_set(2)
+        @input = @window.getstr
+        Curses.curs_set(0)
+      end
       return @input
     end
-      
-    
-    
     
     # overrides View draw_self
     def draw_self
-      attr = View.color_by_name(:yellow)
-      @window.attron(attr) do
+      color_on(:yellow) do
         at(1,1)
-        @window.clrtoeol()
         addstr(@prompt)
       end
-      attr = View.color_by_name(:white)
-      @window.attron(attr) do
+      color_on(:white) do
         addstr("")
       end
     end
-    
-    
   end
+  
+  # a many line message display view
+  class Message < View
+    def initialize(x = 0, y = 0, w = nil, h = nil, parent = nil)
+      # call super constructor 
+      super
+      @messages = [] # reverse message stack, newest are on top/first
+      @max      = 100 # how many messages to retain in memory
+      @show     = self.h - 2 # how many messages to show.
+    end
+    
+    # Accessor for the max property
+    attr_accessor :max
+    
+    # Accessor for the prompt
+    attr_accessor :prompt
+    
+    def <<(message)
+      @messages.unshift(message) # unshift since it's a reverse stack
+      # remove last element (oldest message) if list is "full"
+      @messages.pop if @messages.size > @max
+    end
+    
+    # overrides View draw_self
+    def draw_self
+      attr = View.color_by_name(:cyan)
+      @window.attron(attr) do
+        for index in (0...@show) do
+          at(1, @show - index)
+          message = @messages[index]
+          next unless message # skip over nil messages
+          
+          # truncate too wide messages.
+          if message.size > (self.w - 2)
+            message = message[0, (self.w - 2)] + '…'
+          end
+          addstr(message)
+        end
+      end
+    end
+  end
+    
+    
+  
 end
 
 

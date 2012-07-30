@@ -369,19 +369,42 @@ class Jpt
     View.init
     p View.screen_w
     p View.screen_h
-    @ui               = View.new
-    @ui.heading       = " JPT JTAG Programming Tool "
-    @ui_stat          = @ui.view_of(View::Status, 1, 15, @ui.w - 2, 3) do |v|
+    @ui               = View.new do |v|
+      v.heading       = " JPT JTAG Programming Tool "
+      v.foreground    = :white
+    end
+    # message display 
+    @ui_message       = @ui.view_of(View::Message, 1, 1, @ui.w - 2, @ui.h - 8) do 
+      |v|
+      v.heading       = " Messages "
+      v.foreground    = :cyan
+    end
+    # status line
+    @ui_stat          = @ui.view_of(View::Status, 1, @ui.h - 7, @ui.w - 2, 3) do 
+      |v|
       v.heading       = " Status "
+      v.foreground    = :green
     end
-    @ui_in            = @ui.view_of(View::Input, 1, 20, @ui.w - 2, 3) do |v|
+    # input line
+    @ui_in            = @ui.view_of(View::Input, 1, @ui.h - 4, @ui.w - 2, 3) do 
+      |v|
       v.heading       = " Input "
+      v.foreground    = :yellow
     end
+
+    @ui_message  <<   "Message 1."
+    @ui_message  <<   "Message 2 is next."
+    @ui_message  <<   "Message 3 is much longer and may overflow the view, so I have to check what will happen if this happens. " * 3
+    40.times do  |i|
+      @ui_message << "Mesage #{i+4}"
+    end
+    
     @ui_stat.error("The foo is frobbed!")
     @ui.draw
     @ui.update
     reply = @ui_in.getstr
     @ui_stat.ok(reply)
+    @ui_message  <<   "Message 4 is added dynamically and is also much longer and may overflow the view, so I have to check what will happen if this happens."
     @ui.draw
     @ui.update
     reply = @ui_in.getstr
